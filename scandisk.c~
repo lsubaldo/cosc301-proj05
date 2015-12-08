@@ -14,6 +14,13 @@
 #include "fat.h"
 #include "dos.h"
 
+//make a list of references the same size as the FAT --> start as all 0
+//both for directories and files 
+//can't share clusters --> can remove directory entry or copy and paste it into another cluster 
+
+int refs[4096]; 
+
+
 /* write the values into a directory entry */
 void write_dirent(struct direntry *dirent, char *filename, 
 		  uint16_t start_cluster, uint32_t size)
@@ -108,7 +115,7 @@ void create_dirent(struct direntry *dirent, char *filename,
     }
 }
 
-
+//gets the starting cluster, but doesn't actually follow it -- look in dos_cat 
 uint16_t print_dirent(struct direntry *dirent, int indent)
 {
     uint16_t followclust = 0;

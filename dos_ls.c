@@ -144,7 +144,7 @@ void follow_dir(uint16_t cluster, int indent,
 
 void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
 {
-    uint16_t cluster = 0;
+    uint16_t cluster = 0;  
 
     struct direntry *dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
 

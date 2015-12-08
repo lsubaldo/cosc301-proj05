@@ -14,108 +14,15 @@
 #include "fat.h"
 #include "dos.h"
 
-//make a list of references the same size as the FAT --> start as all 0
-//both for directories and files 
-//can't share clusters --> can remove directory entry or copy and paste it into another cluster 
 
- 
-
-
-/* write the values into a directory entry */
-void write_dirent(struct direntry *dirent, char *filename, 
-		  uint16_t start_cluster, uint32_t size)
+void print_indent(int indent)
 {
-    char *p, *p2;
-    char *uppername;
-    int len, i;
-
-    /* clean out anything old that used to be here */
-    memset(dirent, 0, sizeof(struct direntry));
-
-    /* extract just the filename part */
-    uppername = strdup(filename);
-    p2 = uppername;
-    for (i = 0; i < strlen(filename); i++) 
-    {
-	if (p2[i] == '/' || p2[i] == '\\') 
-	{
-	    uppername = p2+i+1;
-	}
-    }
-
-    /* convert filename to upper case */
-    for (i = 0; i < strlen(uppername); i++) 
-    {
-	uppername[i] = toupper(uppername[i]);
-    }
-
-    /* set the file name and extension */
-    memset(dirent->deName, ' ', 8);
-    p = strchr(uppername, '.');
-    memcpy(dirent->deExtension, "___", 3);
-    if (p == NULL) 
-    {
-	fprintf(stderr, "No filename extension given - defaulting to .___\n");
-    }
-    else 
-    {
-	*p = '\0';
-	p++;
-	len = strlen(p);
-	if (len > 3) len = 3;
-	memcpy(dirent->deExtension, p, len);
-    }
-
-    if (strlen(uppername)>8) 
-    {
-	uppername[8]='\0';
-    }
-    memcpy(dirent->deName, uppername, strlen(uppername));
-    free(p2);
-
-    /* set the attributes and file size */
-    dirent->deAttributes = ATTR_NORMAL;
-    putushort(dirent->deStartCluster, start_cluster);
-    putulong(dirent->deFileSize, size);
-
-    /* could also set time and date here if we really
-       cared... */
+    int i;
+    for (i = 0; i < indent*4; i++)
+	printf(" ");
 }
 
 
-/* create_dirent finds a free slot in the directory, and write the
-   directory entry */
-
-void create_dirent(struct direntry *dirent, char *filename, 
-		   uint16_t start_cluster, uint32_t size,
-		   uint8_t *image_buf, struct bpb33* bpb)
-{
-    while (1) 
-    {
-	if (dirent->deName[0] == SLOT_EMPTY) 
-	{
-	    /* we found an empty slot at the end of the directory */
-	    write_dirent(dirent, filename, start_cluster, size);
-	    dirent++;
-
-	    /* make sure the next dirent is set to be empty, just in
-	       case it wasn't before */
-	    memset((uint8_t*)dirent, 0, sizeof(struct direntry));
-	    dirent->deName[0] = SLOT_EMPTY;
-	    return;
-	}
-
-	if (dirent->deName[0] == SLOT_DELETED) 
-	{
-	    /* we found a deleted entry - we can just overwrite it */
-	    write_dirent(dirent, filename, start_cluster, size);
-	    return;
-	}
-	dirent++;
-    }
-}
-
-//gets the starting cluster, but doesn't actually follow it -- look in dos_cat 
 uint16_t print_dirent(struct direntry *dirent, int indent)
 {
     uint16_t followclust = 0;
@@ -237,7 +144,7 @@ void follow_dir(uint16_t cluster, int indent,
 
 void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
 {
-    uint16_t cluster = 0;
+    uint16_t cluster = 0;  //want root directory 
 
     struct direntry *dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
 
@@ -253,30 +160,28 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
 }
 
 
-void usage(char *progname) {
+void usage(char *progname)
+{
     fprintf(stderr, "usage: %s <imagename>\n", progname);
     exit(1);
 }
 
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     uint8_t *image_buf;
     int fd;
     struct bpb33* bpb;
-    if (argc < 2) {
+    if (argc != 2)
+    {
 	usage(argv[0]);
     }
 
     image_buf = mmap_file(argv[1], &fd);
     bpb = check_bootsector(image_buf);
-
-    // your code should start here...
-
-	
-
-
-
+    traverse_root(image_buf, bpb);
 
     unmmap_file(image_buf, &fd);
+
     return 0;
 }
