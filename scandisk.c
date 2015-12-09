@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "bootsect.h"
 #include "bpb.h"
@@ -14,11 +15,12 @@
 #include "fat.h"
 #include "dos.h"
 
+//Leslie's comments/notes  
 //make a list of references the same size as the FAT --> start as all 0
 //both for directories and files 
 //can't share clusters --> can remove directory entry or copy and paste it into another cluster 
-
- 
+//sector, block, and cluster are synonymous 
+//if entry in FAT, but not in refs, SAVE THE ORPHANS!! DON'T MARK AS FREE IN FAT - WILL KILL ORPHAN; make new directory entry 
 
 
 /* write the values into a directory entry */
@@ -116,7 +118,7 @@ void create_dirent(struct direntry *dirent, char *filename,
 }
 
 //gets the starting cluster, but doesn't actually follow it -- look in dos_cat 
-uint16_t print_dirent(struct direntry *dirent, int indent)
+uint16_t print_dirent(struct direntry *dirent, int indent, uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs)
 {
     uint16_t followclust = 0;
 
@@ -193,27 +195,56 @@ uint16_t print_dirent(struct direntry *dirent, int indent)
          * a "regular" file entry
          * print attributes, size, starting cluster, etc.
          */
-	int ro = (dirent->deAttributes & ATTR_READONLY) == ATTR_READONLY;
-	int hidden = (dirent->deAttributes & ATTR_HIDDEN) == ATTR_HIDDEN;
-	int sys = (dirent->deAttributes & ATTR_SYSTEM) == ATTR_SYSTEM;
-	int arch = (dirent->deAttributes & ATTR_ARCHIVE) == ATTR_ARCHIVE;
+		int ro = (dirent->deAttributes & ATTR_READONLY) == ATTR_READONLY;
+		int hidden = (dirent->deAttributes & ATTR_HIDDEN) == ATTR_HIDDEN;
+		int sys = (dirent->deAttributes & ATTR_SYSTEM) == ATTR_SYSTEM;
+		int arch = (dirent->deAttributes & ATTR_ARCHIVE) == ATTR_ARCHIVE;
 
-	size = getulong(dirent->deFileSize);
-	print_indent(indent);
-	printf("%s.%s (%u bytes) (starting cluster %d) %c%c%c%c\n", 
-	       name, extension, size, getushort(dirent->deStartCluster),
-	       ro?'r':' ', 
-               hidden?'h':' ', 
-               sys?'s':' ', 
-               arch?'a':' ');
+		size = getulong(dirent->deFileSize);
+		print_indent(indent);
+		printf("%s.%s (%u bytes) (starting cluster %d) %c%c%c%c\n", 
+			   name, extension, size, getushort(dirent->deStartCluster),
+			   ro?'r':' ', 
+		       hidden?'h':' ', 
+		       sys?'s':' ', 
+		       arch?'a':' ');
+
+		//LOOK AT DO_CAT METHOD IN DOS_CAT.C!!!!!!!!!!!	
+		//LESLIE'S RANDOM CODE 	
+		/*int num_clusters = 0;
+		uint16_t nxt_cluster = getushort(dirent->deStartCluster);
+		while (is_valid_cluster(nxt_cluster, bpb)) {
+			clustrefs[nxt_cluster]++;
+			uint16_t prev = nxt_cluster;
+			nxt_cluster = get_fat_entry(nxt_cluster, image_buf, bpb);
+			//if there are multiple entires that have the same cluster #
+			if (prev == nxt_cluster) {
+				printf("Cluster points to itself.\n");
+				set_fat_entry(nxt_cluster, FAT12_MASK & CLUST_EOFS, image_buf, bpb);
+				num_clusters++;
+				break;
+			}
+			if (nxt_cluster == (FAT12_MASK & CLUST_BAD)) {
+				printf("CLUSTER IS BAD.\n");
+			}
+			num_clusters++;
+		}
+		if ((size/512) < num_clusters) {
+			printf("INCONSISTENCY. File size less than number of clusters in FAT.\n"); 
+			size += 511;
+		}
+		else if ((size/512) > num_clusters) {
+			printf("INCONSISTENCY. File size greater than number of clusters in FAT.\n"); 
+			size -= 511;
+		}*/
+	
     }
 
     return followclust;
 }
 
-
-void follow_dir(uint16_t cluster, int indent,
-		uint8_t *image_buf, struct bpb33* bpb)
+//use this code to follow cluster -Leslie
+void follow_dir(uint16_t cluster, int indent, uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 {
     while (is_valid_cluster(cluster, bpb))
     {
@@ -224,9 +255,11 @@ void follow_dir(uint16_t cluster, int indent,
 	for ( ; i < numDirEntries; i++)
 	{
             
-            uint16_t followclust = print_dirent(dirent, indent);
-            if (followclust)
-                follow_dir(followclust, indent+1, image_buf, bpb);
+            uint16_t followclust = print_dirent(dirent, indent, image_buf, bpb, clustrefs);
+            if (followclust) {
+				clustrefs[followclust]++;
+                follow_dir(followclust, indent+1, image_buf, bpb, clustrefs);
+			}
             dirent++;
 	}
 
@@ -235,7 +268,7 @@ void follow_dir(uint16_t cluster, int indent,
 }
 
 
-void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
+void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 {
     uint16_t cluster = 0;
 
@@ -244,13 +277,14 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb)
     int i = 0;
     for ( ; i < bpb->bpbRootDirEnts; i++)
     {
-        uint16_t followclust = print_dirent(dirent, 0);
+        uint16_t followclust = print_dirent(dirent, 0, image_buf, bpb, clustrefs);
         if (is_valid_cluster(followclust, bpb))
-            follow_dir(followclust, 1, image_buf, bpb);
+            follow_dir(followclust, 1, image_buf, bpb, clustrefs);
 
         dirent++;
     }
 }
+
 
 
 void usage(char *progname) {
@@ -259,12 +293,22 @@ void usage(char *progname) {
 }
 
 
+void refclusters(int *clustrefs, struct bpb33 *bpb) {
+	// initialize clusters to free
+	for (int i=0; i<bpb->bpbSectors; i++) {
+		clustrefs[i] = 0;
+	}
+	
+	
+}
+
+
 int main(int argc, char** argv) {
     uint8_t *image_buf;
     int fd;
     struct bpb33* bpb;
     if (argc < 2) {
-	usage(argv[0]);
+		usage(argv[0]);
     }
 
     image_buf = mmap_file(argv[1], &fd);
@@ -272,9 +316,17 @@ int main(int argc, char** argv) {
 
     // your code should start here...
 
-	
+	//Structure that keeps track of clusters 
+	int *clustrefs = malloc(sizeof(int) * bpb->bpbSectors);
 
+	refclusters(clustrefs, bpb); 
+	traverse_root(image_buf, bpb, clustrefs); 
 
+	for (int j=0; j<bpb->bpbSectors; j++) {
+		if (clustrefs[j] != 0) {
+			printf("%d\n", j, clustrefs[j]);
+		}
+	}
 
 
     unmmap_file(image_buf, &fd);

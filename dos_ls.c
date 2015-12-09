@@ -132,7 +132,7 @@ void follow_dir(uint16_t cluster, int indent,
 	{
             
             uint16_t followclust = print_dirent(dirent, indent);
-            if (followclust)
+            if (followclust) 
                 follow_dir(followclust, indent+1, image_buf, bpb);
             dirent++;
 	}
