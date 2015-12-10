@@ -230,12 +230,13 @@ uint16_t print_dirent(struct direntry *dirent, int indent, uint8_t *image_buf, s
 			if (prev == cluster) {
 				//move and copy contents to 
 				printf("Cluster points to itself.\n");
-				set_fat_entry(cluster, FAT12_MASK & CLUST_EOFS, image_buf, bpb);
+				//set_fat_entry(cluster, FAT12_MASK & CLUST_EOFS, image_buf, bpb);
 				num_clusters++;
 				break;
 			}
 			if (cluster == (FAT12_MASK & CLUST_BAD)) {
 				printf("CLUSTER IS BAD.\n");
+				//do something here  
 				break;
 			}
 			num_clusters++;
@@ -306,7 +307,17 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 }
 
 
-void find_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
+// Find orphans and save them from their doom 
+void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
+	int orphans = 0;
+	for (int i = 2; i < bpb->bpbSectors; i++) {
+		uint16_t cluster = get_fat_entry(i, image_buf, bpb); 
+		if (clustrefs[i] == 0 && cluster != (FAT12_MASK && CLUST_FREE)) {
+			printf("Orphan found. We must save it.\n"); 
+			orphans++;
+		}
+	}
+	
 }
 
 
@@ -336,12 +347,8 @@ int main(int argc, char** argv) {
 	}
  
 	traverse_root(image_buf, bpb, clustrefs); 
+	save_orphans(image_buf, bpb, clustrefs); 
 	
-	/*for (int j=0; j<bpb->bpbSectors; j++) {
-		if (clustrefs[j] != 0) {
-			printf("num in cluster %d is %d\n", j, clustrefs[j]);
-		}
-	}*/
 	printf("num of sectors is: %d\n", bpb->bpbSectors); 
 	printf("sector size is: %d\n", bpb->bpbBytesPerSec);
     unmmap_file(image_buf, &fd);
