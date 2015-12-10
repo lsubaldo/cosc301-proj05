@@ -215,15 +215,20 @@ uint16_t print_dirent(struct direntry *dirent, int indent, uint8_t *image_buf, s
 		       sys?'s':' ', 
 		       arch?'a':' ');
 
-		//Checking cluster chain 
-
+		/*Checking cluster chain*/ 
 		int num_clusters = 0; //cluster chain count 
 		uint16_t cluster = getushort(dirent->deStartCluster);
+		uint16_t first_clust = cluster;
+		uint16_t prev;
 		while (is_valid_cluster(cluster, bpb)) {
 			clustrefs[cluster]++;
-			uint16_t prev = cluster;
+			if (clustrefs[cluster] > 1) {
+				dirent->deName[0] = SLOT_DELETED;
+				clustrefs[cluster]--;
+				printf("Inconsistent! Multiple references to the same cluster.\n"); 
+			}
+			prev = cluster;
 			cluster = get_fat_entry(cluster, image_buf, bpb);
-			//if there are multiple entires that have the same cluster #
 			if (prev == cluster) {
 				printf("Cluster points to itself.\n");
 				//set_fat_entry(cluster, FAT12_MASK & CLUST_EOFS, image_buf, bpb);
@@ -232,26 +237,50 @@ uint16_t print_dirent(struct direntry *dirent, int indent, uint8_t *image_buf, s
 			}
 			if (cluster == (FAT12_MASK & CLUST_BAD)) {
 				printf("CLUSTER IS BAD.\n");
-				//do something here  
+				/*set_fat_entry(cluster, FAT12_MASK & CLUST_FREE, image_buf, bpb);
+				set_fat_entry(prev, FAT12_MASK & CLUST_EOFS, image_buf, bpb);*/
+				num_clusters++;
 				break;
+				//is it possible for a cluster to be both 'BAD' and have a size inconsistency?? YES  
 			}
 			num_clusters++;
 		}
-		int new_count = 0;
+		int meta_count = 0; //number of clusters, according to the metadata
+		//int rem = 0;
+		uint32_t new_size = 0;
 		if (size%512 == 0) {
-			new_count = size/512;
+			meta_count = size/512;
 		}
 		else {
-			new_count = (size/512) + 1;
+			meta_count = (size/512) + 1;
+			//rem = size%512;
+			//printf("remainder is: %d\n", rem); 
 		}
-		if (new_count < num_clusters) {
+		printf("meta_count is: %d\n", meta_count);
+		printf("num_clusters is %d\n", num_clusters);
+		if (meta_count < num_clusters) {
 			printf("INCONSISTENCY. File size less than number of clusters in FAT.\n"); 
-			//size = num_clusters * bpb->bpbBytesPerSec; 
+			//free any clusters that are beyond the end of a file, but to which the FAT chain still points 
+			/*cluster = get_fat_entry(first_clust + meta_count - 1, image_buf, bpb);
+			while (is_valid_cluster(cluster, bpb)) {
+				prev = cluster;
+				set_fat_entry(prev, FAT12_MASK & CLUST_FREE, image_buf, bpb);
+				cluster = get_fat_entry(cluster, image_buf, bpb);
+			}
+			set_fat_entry(first_clust + meta_count - 1, FAT12_MASK & CLUST_EOFS, image_buf, bpb);*/
+			uint32_t diff = (num_clusters * bpb->bpbBytesPerSec) - size; 
+			printf("diff is %d\n", diff);
+			new_size = size + bpb->bpbBytesPerSec; 
+			printf("new_size is: %d\n", new_size); 
+			putulong(dirent->deFileSize, new_size); 
+			new_size = num_clusters * bpb->bpbBytesPerSec;
+			printf("New size is: %d\n", new_size);
+			printf("Previous size is: %d\n", size); 
 		}
-		else if (new_count > num_clusters) {
+		else if (meta_count > num_clusters) {
 			printf("INCONSISTENCY. File size greater than number of clusters in FAT.\n"); 
-			//size = num_clusters * bpb->bpbBytesPerSec;
-			//putulong(dirent->deFileSize, size);
+			new_size = num_clusters * bpb->bpbBytesPerSec;
+			putulong(dirent->deFileSize, new_size);
 		}
 	
     }
@@ -308,11 +337,12 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 // Find orphans and save them from their doom 
 void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 	printf("Looking for orphans.\n"); 
+	//struct direntry *dirent = (struct direntry*)cluster_to_addr(0, image_buf, bpb); -- need to create directory entry for orphans at some point in this code 
 	int orphans = 0;
 	for (int i = 2; i < bpb->bpbSectors; i++) {
 		uint16_t cluster = get_fat_entry(i, image_buf, bpb); 
-		if (clustrefs[i] == 0 && cluster != (FAT12_MASK && CLUST_FREE)) {
-			printf("Orphan found. We must save it.\n"); 
+		if (clustrefs[i] == 0 && cluster != (FAT12_MASK & CLUST_FREE)) {
+			printf("Orphan found at %d. We must save it.\n", i); 
 			orphans++;
 		}
 	}
@@ -349,8 +379,14 @@ int main(int argc, char** argv) {
 	traverse_root(image_buf, bpb, clustrefs); 
 	save_orphans(image_buf, bpb, clustrefs); 
 	
+	//badimage5.img problem: some clusters incremented to 2; must fix somewhere
+	for (int j=0; j<bpb->bpbSectors; j++) {
+		if (clustrefs[j] > 1) {
+			printf("num in cluster %d is: %d\n", j, clustrefs[j]); 
+		}
+	}
 	printf("num of sectors is: %d\n", bpb->bpbSectors); 
-	printf("sector size is: %d\n", bpb->bpbBytesPerSec);
+	printf("sector size is: %d\n", bpb->bpbBytesPerSec);	
     unmmap_file(image_buf, &fd);
     return 0;
 }
