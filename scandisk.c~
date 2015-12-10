@@ -221,14 +221,10 @@ uint16_t print_dirent(struct direntry *dirent, int indent, uint8_t *image_buf, s
 		uint16_t cluster = getushort(dirent->deStartCluster);
 		while (is_valid_cluster(cluster, bpb)) {
 			clustrefs[cluster]++;
-			if (clustrefs[cluster] > 1) {
-				//check --> not exactly sure what to do yet
-			}
 			uint16_t prev = cluster;
 			cluster = get_fat_entry(cluster, image_buf, bpb);
 			//if there are multiple entires that have the same cluster #
 			if (prev == cluster) {
-				//move and copy contents to 
 				printf("Cluster points to itself.\n");
 				//set_fat_entry(cluster, FAT12_MASK & CLUST_EOFS, image_buf, bpb);
 				num_clusters++;
@@ -299,8 +295,10 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
     for ( ; i < bpb->bpbRootDirEnts; i++)
     {
         uint16_t followclust = print_dirent(dirent, 0, image_buf, bpb, clustrefs);
-        if (is_valid_cluster(followclust, bpb))
+        if (is_valid_cluster(followclust, bpb)) {
+			clustrefs[followclust]++;
             follow_dir(followclust, 1, image_buf, bpb, clustrefs);
+		}
 
         dirent++;
     }
@@ -309,6 +307,7 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 
 // Find orphans and save them from their doom 
 void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
+	printf("Looking for orphans.\n"); 
 	int orphans = 0;
 	for (int i = 2; i < bpb->bpbSectors; i++) {
 		uint16_t cluster = get_fat_entry(i, image_buf, bpb); 
@@ -317,6 +316,7 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 			orphans++;
 		}
 	}
+	printf("Found %d orphan(s).\n", orphans); 
 	
 }
 
