@@ -308,7 +308,7 @@ void follow_dir(uint16_t cluster, int indent, uint8_t *image_buf, struct bpb33* 
 
 void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 {
-	printf("HEY, I'M HERE. I'M TRAVERSING.\n"); 
+	//printf("HEY, I'M HERE. I'M TRAVERSING.\n"); 
     uint16_t cluster = 0;
 
     struct direntry *dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
@@ -321,14 +321,12 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
 			clustrefs[followclust]++;
             follow_dir(followclust, 1, image_buf, bpb, clustrefs);
 		}
-
         dirent++;
     }
 }
 
 
 // Find orphans and save them from their doom
-// NOTE: badimage4.img -- not sure how many orphans I need to save: 6 or 24??? 
 void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 	printf("Looking for orphans.\n"); 
 	int orphans = 0;
@@ -339,17 +337,19 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 			orphans++;
 			int size = bpb->bpbBytesPerSec;
 			clustrefs[i] = 1;
-			uint16_t must_save = cluster;
+			// must_save: iterating pointer to orphan chains
+			uint16_t must_save = cluster; 
 			while (is_valid_cluster(must_save, bpb)) {
-				must_save = get_fat_entry(must_save, image_buf, bpb);
-				clustrefs[must_save]++;
+				//crazy situation: orphan points to inconsistent clusters	
 				if (clustrefs[must_save] > 1) {
 					struct direntry *dirent = (struct direntry*)cluster_to_addr(must_save, image_buf, bpb); 
 					dirent->deName[0] = SLOT_DELETED; 
-					clustrefs[must_save]--;
+					clustrefs[must_save] = 0;
 					printf("Multiple references to same orphan cluster!\n"); 
 				}
+				clustrefs[must_save]++;
 				size += bpb->bpbBytesPerSec;
+				must_save = get_fat_entry(must_save, image_buf, bpb);
 			}
 			char num[5];
 			sprintf(num, "%d", orphans);
@@ -363,6 +363,7 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 			create_dirent(orphanage, file, i, size, image_buf, bpb); 
 			//set_fat_entry(i, (FAT12_MASK & CLUST_EOFS), image_buf, bpb);
 			printf("Brought %s to the orphanage!\n", filename); 
+			printf("Size is %d\n", size); 
 		}
 	}
 	printf("Found %d orphan(s).\n", orphans); 
@@ -405,8 +406,8 @@ int main(int argc, char** argv) {
 		}
 	}
 	//printf("bpbSecPerClust is: %d\n", bpb->bpbSecPerClust); 
-	printf("num of sectors is: %d\n", bpb->bpbSectors); 
-	printf("sector size is: %d\n", bpb->bpbBytesPerSec);	
+	//printf("num of sectors is: %d\n", bpb->bpbSectors); 
+	//printf("sector size is: %d\n", bpb->bpbBytesPerSec);	
     unmmap_file(image_buf, &fd);
     return 0;
 }
