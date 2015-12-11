@@ -343,19 +343,19 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 			while (is_valid_cluster(must_save, bpb)) {
 				//crazy situation: orphan points to inconsistent clusters
 				//weird problem with badimage5: cyclical reference to each other
-				//also, FAT entry 4095? How BIG is a FAT?	
-				if (clustrefs[must_save] > 1) {
-					struct direntry *dirent = (struct direntry*)cluster_to_addr(must_save, image_buf, bpb); 
-					dirent->deName[0] = SLOT_DELETED; 
+				clustrefs[must_save]++;
+				if (clustrefs[must_save] > 1) { 
+					set_fat_entry(i, FAT12_MASK & CLUST_EOFS, image_buf, bpb);  
 					clustrefs[must_save]--;
-					printf("Multiple references to same orphan cluster!\n"); 
+					printf("Orphan references a non-orphan cluster!\n"); 
+					break;
 				}
-				else if (clustrefs[must_save] == 1) {
+				/*else if (clustrefs[must_save] == 1) {
 					set_fat_entry(must_save, (FAT12_MASK & CLUST_EOFS), image_buf, bpb);
-				}
-				else if (clustrefs[must_save] == 0) {
+				}*/
+				/*else if (clustrefs[must_save] == 0) {
 					clustrefs[must_save]++;
-				}
+				}*/
 				size += bpb->bpbBytesPerSec;
 				must_save = get_fat_entry(must_save, image_buf, bpb);
 			}
