@@ -295,7 +295,7 @@ void follow_dir(uint16_t cluster, int indent, uint8_t *image_buf, struct bpb33* 
             
             uint16_t followclust = print_dirent(dirent, indent, image_buf, bpb, clustrefs);
             if (followclust) {
-				clustrefs[followclust]++;
+				clustrefs[followclust]++; //cluster has been referenced 
                 follow_dir(followclust, indent+1, image_buf, bpb, clustrefs);
 			}
             dirent++;
@@ -318,7 +318,7 @@ void traverse_root(uint8_t *image_buf, struct bpb33* bpb, int *clustrefs)
     {
         uint16_t followclust = print_dirent(dirent, 0, image_buf, bpb, clustrefs);
         if (is_valid_cluster(followclust, bpb)) {
-			clustrefs[followclust]++;
+			clustrefs[followclust]++; //cluster has been referenced; must increment
             follow_dir(followclust, 1, image_buf, bpb, clustrefs);
 		}
         dirent++;
@@ -332,6 +332,7 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 	int orphans = 0;
 	for (int i = 2; i < bpb->bpbSectors; i++) {
 		uint16_t cluster = get_fat_entry(i, image_buf, bpb); 
+		printf("Index is %d, FAT entry is %d\n", i, cluster); 
 		if (clustrefs[i] == 0 && cluster != (FAT12_MASK & CLUST_FREE) && cluster != (FAT12_MASK & CLUST_BAD)) {
 			printf("Orphan found at index %d, FAT number %d. We must save it.\n", i, cluster); 
 			orphans++;
@@ -340,7 +341,8 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 			// must_save: iterating pointer to orphan chains
 			uint16_t must_save = cluster; 
 			while (is_valid_cluster(must_save, bpb)) {
-				//crazy situation: orphan points to inconsistent clusters	
+				//crazy situation: orphan points to inconsistent clusters
+				//weird problem with badimage5: cyclical reference to each other	
 				if (clustrefs[must_save] > 1) {
 					struct direntry *dirent = (struct direntry*)cluster_to_addr(must_save, image_buf, bpb); 
 					dirent->deName[0] = SLOT_DELETED; 
