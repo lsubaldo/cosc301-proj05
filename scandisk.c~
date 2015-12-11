@@ -333,7 +333,7 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 	for (int i = 2; i < bpb->bpbSectors; i++) {
 		uint16_t cluster = get_fat_entry(i, image_buf, bpb); 
 		if (clustrefs[i] == 0 && cluster != (FAT12_MASK & CLUST_FREE) && cluster != (FAT12_MASK & CLUST_BAD)) {
-			printf("Orphan found at %d. We must save it.\n", i); 
+			printf("Orphan found at index %d, FAT number %d. We must save it.\n", i, cluster); 
 			orphans++;
 			int size = bpb->bpbBytesPerSec;
 			clustrefs[i] = 1;
@@ -344,10 +344,15 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 				if (clustrefs[must_save] > 1) {
 					struct direntry *dirent = (struct direntry*)cluster_to_addr(must_save, image_buf, bpb); 
 					dirent->deName[0] = SLOT_DELETED; 
-					clustrefs[must_save] = 0;
+					clustrefs[must_save]--;
 					printf("Multiple references to same orphan cluster!\n"); 
 				}
-				clustrefs[must_save]++;
+				else if (clustrefs[must_save] == 1) {
+					set_fat_entry(must_save, (FAT12_MASK & CLUST_EOFS), image_buf, bpb);
+				}
+				else if (clustrefs[must_save] == 0) {
+					clustrefs[must_save]++;
+				}
 				size += bpb->bpbBytesPerSec;
 				must_save = get_fat_entry(must_save, image_buf, bpb);
 			}
@@ -361,7 +366,7 @@ void save_orphans(uint8_t *image_buf, struct bpb33 *bpb, int *clustrefs) {
 			printf("Bringing %s to orphanage.\n", filename);
 			struct direntry *orphanage = (struct direntry*)root_dir_addr(image_buf, bpb); 
 			create_dirent(orphanage, file, i, size, image_buf, bpb); 
-			//set_fat_entry(i, (FAT12_MASK & CLUST_EOFS), image_buf, bpb);
+			
 			printf("Brought %s to the orphanage!\n", filename); 
 			printf("Size is %d\n", size); 
 		}
@@ -409,5 +414,6 @@ int main(int argc, char** argv) {
 	//printf("num of sectors is: %d\n", bpb->bpbSectors); 
 	//printf("sector size is: %d\n", bpb->bpbBytesPerSec);	
     unmmap_file(image_buf, &fd);
+	free((void*)clustrefs); 
     return 0;
 }
